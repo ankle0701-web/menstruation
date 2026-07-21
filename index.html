@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>생리일지 · 물봉선</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" />
+
+<!-- ============================================================
+  Firebase (Firestore) 새 프로젝트 설정 안내
+  1) https://console.firebase.google.com 새 프로젝트 생성 (애널리틱스는 꺼도 무방)
+  2) Firestore Database → 데이터베이스 만들기 (서울 asia-northeast3 추천)
+  3) 규칙(Rules) 탭:
+     rules_version = '2';
+     service cloud.firestore {
+       match /databases/{database}/documents {
+         match /{document=**} { allow read, write: if true; }
+       }
+     }
+  4) 프로젝트 설정 → 내 앱 → 웹앱 추가 → firebaseConfig 복사해서 아래에 붙여넣기
+============================================================ -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+
+<style>
+:root{
+  --bg:#F6F1F3;
+  --surface:#FFFFFF;
+  --surface-soft:#F1E6EC;
+  --ink:#2E2530;
+  --ink-soft:#78677F;
+  --ink-faint:#AB9CB0;
+  --line:#E5D9E2;
+
+  --primary:#A8638F;
+  --primary-dark:#7E4A6C;
+  --primary-soft:#F3E3EC;
+
+  --warn:#C77B3E;
+  --warn-soft:#FBEADA;
+  --danger:#B85656;
+
+  --amt-light:#C9A0BB;
+  --amt-mid:#A8638F;
+  --amt-heavy:#7E4A6C;
+
+  --radius:10px;
+  --shadow:0 1px 3px rgba(46,37,48,0.08), 0 1px 2px rgba(46,37,48,0.06);
+  --shadow-lg:0 12px 32px rgba(46,37,48,0.18);
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  font-family:'Pretendard',-apple-system,'Malgun Gothic',sans-serif;
+  background:var(--bg);color:var(--ink);line-height:1.5;padding-bottom:60px;
+}
+.wrap{max-width:1180px;margin:0 auto;padding:24px 20px 0;}
+
+header.app-header{display:flex;align-items:flex-end;justify-content:space-between;flex-wrap:wrap;gap:14px;margin-bottom:18px;}
+.title-block .eyebrow{font-size:12.5px;font-weight:600;color:var(--primary);letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px;}
+.title-block h1{margin:0;font-size:26px;font-weight:700;letter-spacing:-0.02em;}
+.title-block p{margin:4px 0 0;font-size:13.5px;color:var(--ink-soft);}
+.header-actions{display:flex;gap:8px;flex-wrap:wrap;}
+
+button{font-family:inherit;cursor:pointer;border:none;}
+.btn{padding:10px 16px;border-radius:8px;font-size:14px;font-weight:600;background:var(--surface);color:var(--ink);border:1px solid var(--line);transition:.15s;}
+.btn:hover{background:var(--surface-soft);}
+.btn-primary{background:var(--primary);color:#fff;border-color:var(--primary);}
+.btn-primary:hover{background:var(--primary-dark);}
+.btn-ghost{background:transparent;border-color:transparent;color:var(--ink-soft);}
+.btn-ghost:hover{background:var(--surface-soft);}
+.btn-sm{padding:6px 10px;font-size:12.5px;border-radius:6px;}
+
+#alertStrip{margin-bottom:16px;display:none;flex-direction:column;gap:8px;}
+.alert-card{display:flex;align-items:center;gap:10px;background:var(--warn-soft);border:1px solid #EFCFA0;border-radius:var(--radius);padding:11px 14px;font-size:13.5px;color:#7A4A17;}
+.alert-card b{font-weight:700;}
+
+.toolbar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:14px;}
+.month-nav{display:flex;align-items:center;gap:6px;}
+.month-nav .month-label{font-size:17px;font-weight:700;min-width:112px;text-align:center;}
+.icon-btn{width:32px;height:32px;border-radius:8px;background:var(--surface);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:15px;color:var(--ink-soft);}
+.icon-btn:hover{background:var(--surface-soft);}
+
+select, input[type=text], input[type=date], input[type=number], textarea{
+  font-family:inherit;font-size:13.5px;padding:8px 10px;border-radius:8px;
+  border:1px solid var(--line);background:var(--surface);color:var(--ink);
+}
+select:focus, input:focus, textarea:focus{outline:2px solid var(--primary-soft);border-color:var(--primary);}
+
+.calendar-card{background:var(--surface);border-radius:14px;box-shadow:var(--shadow);padding:14px;margin-bottom:22px;}
+.weekday-row{display:grid;grid-template-columns:repeat(7,1fr);margin-bottom:4px;}
+.weekday-row div{text-align:center;font-size:12px;font-weight:700;color:var(--ink-faint);padding:6px 0;}
+.weekday-row div:first-child{color:#C25B5B;}
+.weekday-row div:last-child{color:var(--primary);}
+
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;}
+.cal-cell{min-height:100px;background:var(--bg);border-radius:8px;padding:6px 6px 8px;border:1px solid transparent;display:flex;flex-direction:column;gap:4px;cursor:pointer;transition:.12s;}
+.cal-cell:hover{border-color:var(--primary-soft);background:var(--surface-soft);}
+.cal-cell.empty{background:transparent;cursor:default;}
+.cal-cell.empty:hover{border-color:transparent;background:transparent;}
+.cal-cell.today{border-color:var(--primary);background:var(--primary-soft);}
+.cal-date{font-size:12.5px;font-weight:700;color:var(--ink-soft);padding:2px 4px;}
+.cal-cell.today .cal-date{color:var(--primary-dark);}
+.cal-date.sun{color:#C25B5B;}
+.cal-date.sat{color:var(--primary);}
+
+.chip{display:flex;align-items:center;gap:5px;background:var(--surface);border-radius:6px;padding:3px 6px;font-size:11.5px;font-weight:600;border-left:3px solid var(--primary);}
+.chip .chip-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:52px;}
+.chip .chip-tag{font-size:10px;font-weight:700;padding:1px 5px;border-radius:5px;flex-shrink:0;white-space:nowrap;}
+.chip .chip-tag.start{color:var(--primary-dark);background:var(--primary-soft);}
+.chip .chip-tag.end{color:var(--warn);background:var(--warn-soft);}
+.chip-more{font-size:11px;color:var(--ink-faint);padding:2px 6px;}
+
+.panels{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:22px;}
+.panel{background:var(--surface);border-radius:14px;box-shadow:var(--shadow);padding:18px;}
+.panel h2{margin:0 0 12px;font-size:15px;font-weight:700;display:flex;align-items:center;gap:6px;}
+.panel .empty-note{color:var(--ink-faint);font-size:13px;padding:10px 0;}
+.mini-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:13.5px;cursor:pointer;}
+.mini-row:last-child{border-bottom:none;}
+.mini-left{display:flex;align-items:center;gap:8px;min-width:0;}
+.mini-name{font-weight:700;flex-shrink:0;}
+.mini-sub{color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.mini-right{font-size:12px;color:var(--ink-faint);flex-shrink:0;text-align:right;}
+.mini-right.warn{color:var(--warn);font-weight:700;}
+.amt-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+.amt-dot.적음{background:var(--amt-light);}
+.amt-dot.보통{background:var(--amt-mid);}
+.amt-dot.많음{background:var(--amt-heavy);}
+
+.list-card{background:var(--surface);border-radius:14px;box-shadow:var(--shadow);padding:18px;}
+.list-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px;}
+.list-head h2{margin:0;font-size:15px;font-weight:700;}
+table{width:100%;border-collapse:collapse;font-size:13px;}
+th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--line);}
+th{color:var(--ink-soft);font-weight:600;font-size:12px;}
+tr:last-child td{border-bottom:none;}
+td.status-ongoing{color:var(--primary);font-weight:700;}
+td.status-done{color:var(--ink-faint);}
+.row-actions{display:flex;gap:6px;}
+
+.modal-backdrop{display:none;position:fixed;inset:0;background:rgba(46,37,48,0.45);align-items:center;justify-content:center;z-index:50;padding:16px;}
+.modal-backdrop.show{display:flex;}
+.modal{background:var(--surface);border-radius:16px;box-shadow:var(--shadow-lg);width:100%;max-width:460px;padding:22px;max-height:92vh;overflow-y:auto;}
+.modal h3{margin:0 0 4px;font-size:17px;font-weight:700;}
+.modal .sub{font-size:12.5px;color:var(--ink-soft);margin-bottom:16px;}
+.field{margin-bottom:13px;}
+.field label{display:block;font-size:12.5px;font-weight:700;color:var(--ink-soft);margin-bottom:5px;}
+.field input, .field select, .field textarea{width:100%;}
+.field textarea{resize:vertical;min-height:56px;}
+.field-row{display:flex;gap:10px;}
+.field-row .field{flex:1;}
+.checkbox-group{display:flex;flex-wrap:wrap;gap:8px;}
+.checkbox-chip{
+  display:flex;align-items:center;gap:5px;padding:6px 10px;border-radius:20px;
+  border:1px solid var(--line);font-size:12.5px;cursor:pointer;user-select:none;
+}
+.checkbox-chip input{margin:0;}
+.checkbox-chip.checked{background:var(--primary-soft);border-color:var(--primary);color:var(--primary-dark);font-weight:700;}
+.preview-box{background:var(--primary-soft);border-radius:8px;padding:11px 13px;font-size:13px;color:var(--primary-dark);margin:14px 0 4px;line-height:1.6;}
+.preview-box b{font-weight:700;}
+.modal-actions{display:flex;justify-content:space-between;gap:8px;margin-top:18px;}
+.modal-actions .left{display:flex;gap:8px;}
+
+.day-list{display:flex;flex-direction:column;gap:8px;margin-top:10px;}
+.day-item{border:1px solid var(--line);border-radius:9px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer;}
+.day-item:hover{background:var(--surface-soft);}
+.day-item .di-name{font-weight:700;font-size:14px;}
+.day-item .di-sub{font-size:12.5px;color:var(--ink-soft);}
+
+#toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#fff;padding:11px 18px;border-radius:9px;font-size:13.5px;opacity:0;pointer-events:none;transition:.25s;z-index:100;}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+.setup-warning{background:#FBEADA;border:1px solid #EFCFA0;border-radius:10px;padding:14px 16px;font-size:13px;color:#7A4A17;margin-bottom:18px;line-height:1.6;}
+.setup-warning code{background:#fff;padding:1px 5px;border-radius:4px;}
+
+@media (max-width:760px){
+  .panels{grid-template-columns:1fr;}
+  .cal-cell{min-height:76px;}
+  .chip .chip-name{max-width:32px;}
+}
+#printArea{display:none;}
+.print-title{font-size:19px;font-weight:700;margin:0 0 2px;}
+.print-sub{font-size:12.5px;color:var(--ink-soft);margin:0 0 16px;}
+.print-table{width:100%;border-collapse:collapse;font-size:12px;}
+.print-table th,.print-table td{border:1px solid #ccc;padding:6px 7px;text-align:left;}
+.print-table th{background:#f2eef1;font-weight:700;}
+.print-empty{padding:20px 0;color:#888;font-size:13px;}
+.print-footer{margin-top:14px;font-size:11px;color:#888;}
+
+@media print{
+  body *{visibility:hidden;}
+  #printArea, #printArea *{visibility:visible;}
+  #printArea{display:block;position:absolute;top:0;left:0;width:100%;padding:20px;}
+  .header-actions,.toolbar .filters,.panels,.list-card,#alertStrip,.icon-btn,.calendar-card{display:none !important;}
+  body{background:#fff;padding:0;}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="app-header">
+    <div class="title-block">
+      <div class="eyebrow">사하의집 · 물봉선</div>
+      <h1>생리일지</h1>
+      <p>시작일과 종료일(선택), 양, 증상을 기록하면 캘린더에 시작·종료일이 표시되고 다음 예정일을 예측해드려요.</p>
+    </div>
+    <div class="header-actions">
+      <button class="btn" onclick="printMonth()">🖨️ 이번달 인쇄</button>
+      <button class="btn btn-primary" onclick="openAddModal()">＋ 기록 등록</button>
+    </div>
+  </header>
+
+  <div id="setupWarning" class="setup-warning" style="display:none;">
+    ⚠️ Firebase 연결이 설정되지 않았습니다. 이 파일 상단의 <code>firebaseConfig</code> 부분을 본인의 Firebase 프로젝트 값으로 채워주세요. 그 전까지는 데이터가 저장되지 않고 새로고침하면 사라집니다.
+  </div>
+
+  <div id="alertStrip"></div>
+
+  <div class="toolbar">
+    <div class="month-nav">
+      <button class="icon-btn" onclick="changeMonth(-1)">◀</button>
+      <div class="month-label" id="monthLabel">2026년 7월</div>
+      <button class="icon-btn" onclick="changeMonth(1)">▶</button>
+      <button class="btn btn-ghost btn-sm" onclick="goToday()">오늘</button>
+    </div>
+  </div>
+
+  <div class="calendar-card">
+    <div class="weekday-row">
+      <div>일</div><div>월</div><div>화</div><div>수</div><div>목</div><div>금</div><div>토</div>
+    </div>
+    <div class="cal-grid" id="calGrid"></div>
+  </div>
+
+  <div class="panels">
+    <div class="panel">
+      <h2>🩸 현재 생리 중</h2>
+      <div id="ongoingList"></div>
+    </div>
+    <div class="panel">
+      <h2>📅 다음 생리 예정 (7일 이내 예측)</h2>
+      <div id="predictList"></div>
+    </div>
+  </div>
+
+  <div class="list-card">
+    <div class="list-head">
+      <h2>전체 기록</h2>
+      <input type="text" id="searchInput" placeholder="이름 검색" oninput="renderTable()" style="width:160px;">
+    </div>
+    <div style="overflow-x:auto;">
+      <table>
+        <thead>
+          <tr><th>이용인</th><th>시작일</th><th>종료일</th><th>기간</th><th>양</th><th>증상</th><th>상태</th><th></th></tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<!-- Add/Edit Modal -->
+<div class="modal-backdrop" id="entryModalBackdrop">
+  <div class="modal">
+    <h3 id="entryModalTitle">생리 기록 등록</h3>
+    <div class="sub">종료일을 모르면 비워두세요. 나중에 다시 열어서 종료일만 채워 넣을 수 있어요.</div>
+
+    <div class="field">
+      <label>이용인 이름</label>
+      <input type="text" id="f_name" list="nameList" placeholder="예: 김ㅇㅇ">
+      <datalist id="nameList"></datalist>
+    </div>
+
+    <div class="field-row">
+      <div class="field">
+        <label>시작일</label>
+        <input type="date" id="f_start" onchange="updatePreview()">
+      </div>
+      <div class="field">
+        <label>종료일 (선택)</label>
+        <input type="date" id="f_end" onchange="updatePreview()">
+      </div>
+    </div>
+
+    <div class="field">
+      <label>양</label>
+      <select id="f_amount">
+        <option value="적음">적음</option>
+        <option value="보통" selected>보통</option>
+        <option value="많음">많음</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label>증상</label>
+      <div class="checkbox-group" id="symptomGroup">
+        <!-- filled by JS -->
+      </div>
+    </div>
+
+    <div class="field">
+      <label>메모</label>
+      <textarea id="f_note" placeholder="특이사항을 적어주세요"></textarea>
+    </div>
+
+    <div class="preview-box" id="previewBox"></div>
+
+    <div class="modal-actions">
+      <div class="left">
+        <button class="btn" id="deleteBtn" style="display:none;color:var(--danger);" onclick="deleteEntry()">삭제</button>
+      </div>
+      <div class="left">
+        <button class="btn" onclick="closeEntryModal()">취소</button>
+        <button class="btn btn-primary" onclick="saveEntry()">저장</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Day Detail Modal -->
+<div class="modal-backdrop" id="dayModalBackdrop">
+  <div class="modal">
+    <h3 id="dayModalTitle">7월 21일</h3>
+    <div class="sub">이 날짜에 시작 또는 종료된 기록입니다. 항목을 누르면 수정할 수 있어요.</div>
+    <div class="day-list" id="dayList"></div>
+    <div class="modal-actions" style="justify-content:flex-end;">
+      <button class="btn" onclick="closeDayModal()">닫기</button>
+      <button class="btn btn-primary" onclick="openAddModalForDay()">＋ 이 날짜로 등록</button>
+    </div>
+  </div>
+</div>
+
+<div id="printArea"></div>
+
+<div id="toast"></div>
+
+<script>
+/* ===================== Firebase 설정 =====================
+   ↓↓↓ 여기를 본인의 Firebase 프로젝트 설정값으로 교체하세요 ↓↓↓
+============================================================ */
+const firebaseConfig = {
+  apiKey: "AIzaSyD7DRFvmp_zPlB_Fycl1H3doJgd7zmyxRI",
+  authDomain: "health-app-c1f81.firebaseapp.com",
+  projectId: "health-app-c1f81",
+  storageBucket: "health-app-c1f81.firebasestorage.app",
+  messagingSenderId: "69623585301",
+  appId: "1:69623585301:web:cf0a896648d4e899344c1c",
+  measurementId: "G-ZN4CGP74QZ"
+};
+
+let db = null;
+let entries = []; // {id, residentName, startDate, endDate|null, amount, symptoms:[], note}
+let firebaseReady = false;
+
+try{
+  if(firebaseConfig.apiKey && firebaseConfig.apiKey !== "YOUR_API_KEY"){
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.firestore();
+    firebaseReady = true;
+  }else{
+    document.getElementById('setupWarning').style.display = 'block';
+  }
+}catch(e){
+  console.error(e);
+  document.getElementById('setupWarning').style.display = 'block';
+}
+
+const SYMPTOMS = ['복통','두통','요통','부종','예민/기분변화'];
+
+/* ===================== 날짜 유틸 ===================== */
+function toDateObj(str){ return new Date(str + 'T00:00:00'); }
+function fmtISO(date){
+  const y = date.getFullYear(), m = String(date.getMonth()+1).padStart(2,'0'), d = String(date.getDate()).padStart(2,'0');
+  return `${y}-${m}-${d}`;
+}
+function addDays(date, n){ const d = new Date(date); d.setDate(d.getDate()+n); return d; }
+function sameDate(a,b){ return a.getTime() === b.getTime(); }
+function todayISO(){ return fmtISO(new Date()); }
+function formatKDate(date){ return `${date.getMonth()+1}월 ${date.getDate()}일`; }
+
+function isOngoingOn(entry, dateStr){
+  const d = toDateObj(dateStr);
+  const start = toDateObj(entry.startDate);
+  if(d < start) return false;
+  if(entry.endDate){
+    return d <= toDateObj(entry.endDate);
+  }
+  return true; // 종료일 미입력 = 계속 진행중으로 간주
+}
+function isMarkerDate(entry, dateStr){
+  // 캘린더에는 시작일 / 종료일만 표시
+  if(dateStr === entry.startDate) return 'start';
+  if(entry.endDate && dateStr === entry.endDate) return 'end';
+  return null;
+}
+function durationDays(entry){
+  if(!entry.endDate) return null;
+  return Math.round((toDateObj(entry.endDate) - toDateObj(entry.startDate)) / 86400000) + 1;
+}
+
+/* ===================== 상태 ===================== */
+let viewYear = new Date().getFullYear();
+let viewMonth = new Date().getMonth();
+let editingId = null;
+let pendingDayDate = null;
+let selectedSymptoms = [];
+
+/* ===================== Firestore 연동 ===================== */
+function loadEntries(){
+  if(!firebaseReady){ renderAll(); return; }
+  db.collection('periods').onSnapshot(snap => {
+    entries = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    renderAll();
+  }, err => {
+    console.error(err);
+    showToast('데이터를 불러오지 못했습니다.');
+  });
+}
+
+function saveEntry(){
+  const name = document.getElementById('f_name').value.trim();
+  const start = document.getElementById('f_start').value;
+  const end = document.getElementById('f_end').value || null;
+  const amount = document.getElementById('f_amount').value;
+  const note = document.getElementById('f_note').value.trim();
+
+  if(!name){ showToast('이용인 이름을 입력해주세요.'); return; }
+  if(!start){ showToast('시작일을 선택해주세요.'); return; }
+  if(end && toDateObj(end) < toDateObj(start)){ showToast('종료일이 시작일보다 빠를 수 없습니다.'); return; }
+
+  const data = { residentName: name, startDate: start, endDate: end, amount, symptoms: selectedSymptoms.slice(), note };
+
+  if(!firebaseReady){
+    if(editingId){
+      const idx = entries.findIndex(e => e.id === editingId);
+      if(idx > -1) entries[idx] = { id: editingId, ...data };
+    }else{
+      entries.push({ id: 'local-' + Date.now(), ...data });
+    }
+    renderAll();
+    closeEntryModal();
+    showToast('저장되었습니다 (Firebase 미연결 · 새로고침 시 사라짐)');
+    return;
+  }
+
+  const promise = editingId
+    ? db.collection('periods').doc(editingId).set(data)
+    : db.collection('periods').add({ ...data, createdAt: firebase.firestore.FieldValue.serverTimestamp() });
+
+  promise.then(() => {
+    closeEntryModal();
+    showToast('저장되었습니다.');
+  }).catch(err => {
+    console.error(err);
+    showToast('저장에 실패했습니다.');
+  });
+}
+
+function deleteEntry(){
+  if(!editingId) return;
+  if(!confirm('이 기록을 삭제할까요?')) return;
+
+  if(!firebaseReady){
+    entries = entries.filter(e => e.id !== editingId);
+    renderAll();
+    closeEntryModal();
+    showToast('삭제되었습니다.');
+    return;
+  }
+  db.collection('periods').doc(editingId).delete().then(() => {
+    closeEntryModal();
+    showToast('삭제되었습니다.');
+  }).catch(err => {
+    console.error(err);
+    showToast('삭제에 실패했습니다.');
+  });
+}
+
+/* ===================== 증상 체크박스 ===================== */
+function renderSymptomGroup(){
+  const group = document.getElementById('symptomGroup');
+  group.innerHTML = SYMPTOMS.map(s => `
+    <label class="checkbox-chip ${selectedSymptoms.includes(s)?'checked':''}" onclick="toggleSymptom(event,'${s}')">
+      <input type="checkbox" ${selectedSymptoms.includes(s)?'checked':''} style="display:none;">
+      ${s}
+    </label>`).join('');
+}
+function toggleSymptom(ev, s){
+  ev.preventDefault();
+  const idx = selectedSymptoms.indexOf(s);
+  if(idx > -1) selectedSymptoms.splice(idx,1); else selectedSymptoms.push(s);
+  renderSymptomGroup();
+}
+
+/* ===================== 모달 ===================== */
+function openAddModal(prefillDate){
+  editingId = null;
+  selectedSymptoms = [];
+  document.getElementById('entryModalTitle').textContent = '생리 기록 등록';
+  document.getElementById('deleteBtn').style.display = 'none';
+  document.getElementById('f_name').value = '';
+  document.getElementById('f_start').value = prefillDate || todayISO();
+  document.getElementById('f_end').value = '';
+  document.getElementById('f_amount').value = '보통';
+  document.getElementById('f_note').value = '';
+  renderSymptomGroup();
+  updatePreview();
+  document.getElementById('entryModalBackdrop').classList.add('show');
+}
+function openAddModalForDay(){
+  closeDayModal();
+  openAddModal(pendingDayDate);
+}
+function openEditModal(id){
+  const e = entries.find(x => x.id === id);
+  if(!e) return;
+  editingId = id;
+  selectedSymptoms = (e.symptoms || []).slice();
+  document.getElementById('entryModalTitle').textContent = '생리 기록 수정';
+  document.getElementById('deleteBtn').style.display = 'inline-block';
+  document.getElementById('f_name').value = e.residentName;
+  document.getElementById('f_start').value = e.startDate;
+  document.getElementById('f_end').value = e.endDate || '';
+  document.getElementById('f_amount').value = e.amount || '보통';
+  document.getElementById('f_note').value = e.note || '';
+  renderSymptomGroup();
+  updatePreview();
+  closeDayModal();
+  document.getElementById('entryModalBackdrop').classList.add('show');
+}
+function closeEntryModal(){
+  document.getElementById('entryModalBackdrop').classList.remove('show');
+  editingId = null;
+}
+function updatePreview(){
+  const start = document.getElementById('f_start').value;
+  const end = document.getElementById('f_end').value;
+  const box = document.getElementById('previewBox');
+  if(!start){ box.innerHTML = '시작일을 입력하면 요약이 표시됩니다.'; return; }
+  const s = toDateObj(start);
+  if(!end){
+    box.innerHTML = `<b>${formatKDate(s)}</b> 시작 · 종료일 미입력 (진행중으로 표시)`;
+  }else{
+    const en = toDateObj(end);
+    const days = Math.round((en - s)/86400000) + 1;
+    box.innerHTML = `<b>${formatKDate(s)}</b> 시작 → <b>${formatKDate(en)}</b> 종료 (총 ${days}일)`;
+  }
+}
+
+function openDayModal(dateStr){
+  pendingDayDate = dateStr;
+  const d = toDateObj(dateStr);
+  document.getElementById('dayModalTitle').textContent = `${formatKDate(d)}${sameDate(d, toDateObj(todayISO())) ? ' (오늘)' : ''}`;
+  const list = entries
+    .filter(e => isMarkerDate(e, dateStr))
+    .sort((a,b) => a.residentName.localeCompare(b.residentName, 'ko'));
+
+  const container = document.getElementById('dayList');
+  if(list.length === 0){
+    container.innerHTML = '<div class="empty-note">이 날짜에 시작·종료로 기록된 내역이 없습니다.</div>';
+  }else{
+    container.innerHTML = list.map(e => {
+      const marker = isMarkerDate(e, dateStr);
+      return `<div class="day-item" onclick="openEditModal('${e.id}')">
+        <div>
+          <div class="di-name">${escapeHtml(e.residentName)} <span class="amt-dot ${e.amount}" style="display:inline-block;"></span></div>
+          <div class="di-sub">${marker==='start' ? '시작일' : '종료일'} · 양: ${e.amount} ${e.symptoms&&e.symptoms.length? '· '+e.symptoms.join(', ') : ''}</div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+  document.getElementById('dayModalBackdrop').classList.add('show');
+}
+function closeDayModal(){
+  document.getElementById('dayModalBackdrop').classList.remove('show');
+}
+
+/* ===================== 렌더링 ===================== */
+function changeMonth(delta){
+  viewMonth += delta;
+  if(viewMonth < 0){ viewMonth = 11; viewYear--; }
+  if(viewMonth > 11){ viewMonth = 0; viewYear++; }
+  renderAll();
+}
+function goToday(){
+  const t = new Date();
+  viewYear = t.getFullYear();
+  viewMonth = t.getMonth();
+  renderAll();
+}
+
+function renderAll(){
+  renderCalendar();
+  renderPanels();
+  renderTable();
+  renderAlerts();
+  refreshDatalists();
+}
+
+function renderCalendar(){
+  document.getElementById('monthLabel').textContent = `${viewYear}년 ${viewMonth+1}월`;
+  const grid = document.getElementById('calGrid');
+  grid.innerHTML = '';
+
+  const firstDay = new Date(viewYear, viewMonth, 1);
+  const startWeekday = firstDay.getDay();
+  const daysInMonth = new Date(viewYear, viewMonth+1, 0).getDate();
+  const todayStr = todayISO();
+
+  for(let i=0; i<startWeekday; i++){
+    const cell = document.createElement('div');
+    cell.className = 'cal-cell empty';
+    grid.appendChild(cell);
+  }
+
+  for(let day=1; day<=daysInMonth; day++){
+    const dateObj = new Date(viewYear, viewMonth, day);
+    const dateStr = fmtISO(dateObj);
+    const weekday = dateObj.getDay();
+
+    const cell = document.createElement('div');
+    cell.className = 'cal-cell' + (dateStr === todayStr ? ' today' : '');
+    cell.onclick = () => openDayModal(dateStr);
+
+    const dateLabel = document.createElement('div');
+    dateLabel.className = 'cal-date' + (weekday===0?' sun':weekday===6?' sat':'');
+    dateLabel.textContent = day;
+    cell.appendChild(dateLabel);
+
+    const dayEntries = entries
+      .filter(e => isMarkerDate(e, dateStr))
+      .sort((a,b) => a.residentName.localeCompare(b.residentName, 'ko'));
+
+    const maxShow = 3;
+    dayEntries.slice(0, maxShow).forEach(e => {
+      const marker = isMarkerDate(e, dateStr);
+      const chip = document.createElement('div');
+      chip.className = 'chip';
+      chip.onclick = (ev) => { ev.stopPropagation(); openEditModal(e.id); };
+      chip.innerHTML = `<span class="chip-name">${escapeHtml(e.residentName)}</span>
+        <span class="chip-tag ${marker}">${marker==='start'?'시작':'종료'}</span>`;
+      cell.appendChild(chip);
+    });
+    if(dayEntries.length > maxShow){
+      const more = document.createElement('div');
+      more.className = 'chip-more';
+      more.textContent = `+${dayEntries.length - maxShow}건 더`;
+      cell.appendChild(more);
+    }
+
+    grid.appendChild(cell);
+  }
+}
+
+function renderPanels(){
+  const todayStr = todayISO();
+
+  const ongoing = entries
+    .filter(e => isOngoingOn(e, todayStr))
+    .sort((a,b) => a.residentName.localeCompare(b.residentName, 'ko'));
+
+  const ongoingList = document.getElementById('ongoingList');
+  if(ongoing.length === 0){
+    ongoingList.innerHTML = '<div class="empty-note">현재 생리 중인 이용인이 없습니다.</div>';
+  }else{
+    ongoingList.innerHTML = ongoing.map(e => {
+      const dayCount = Math.round((toDateObj(todayStr) - toDateObj(e.startDate))/86400000) + 1;
+      return `<div class="mini-row" onclick="openEditModal('${e.id}')">
+        <div class="mini-left">
+          <span class="amt-dot ${e.amount}"></span>
+          <span class="mini-name">${escapeHtml(e.residentName)}</span>
+          <span class="mini-sub">${e.symptoms&&e.symptoms.length ? e.symptoms.join(', ') : ''}</span>
+        </div>
+        <div class="mini-right">${dayCount}일째${e.endDate?'':' · 종료일 미입력'}</div>
+      </div>`;
+    }).join('');
+  }
+
+  // 예측: 이용인별 과거 시작일 히스토리로 평균 주기 계산
+  const byName = {};
+  entries.forEach(e => {
+    if(!byName[e.residentName]) byName[e.residentName] = [];
+    byName[e.residentName].push(e.startDate);
+  });
+  const predictions = [];
+  Object.keys(byName).forEach(name => {
+    const starts = byName[name].sort();
+    if(starts.length < 2) return;
+    const diffs = [];
+    for(let i=1;i<starts.length;i++){
+      diffs.push(Math.round((toDateObj(starts[i]) - toDateObj(starts[i-1]))/86400000));
+    }
+    const avgCycle = Math.round(diffs.reduce((a,b)=>a+b,0)/diffs.length);
+    const lastStart = toDateObj(starts[starts.length-1]);
+    const predicted = addDays(lastStart, avgCycle);
+    const daysAway = Math.round((predicted - toDateObj(todayStr))/86400000);
+    if(daysAway >= -1 && daysAway <= 7){
+      predictions.push({ name, predicted, daysAway, avgCycle });
+    }
+  });
+  predictions.sort((a,b) => a.daysAway - b.daysAway);
+
+  const predictList = document.getElementById('predictList');
+  if(predictions.length === 0){
+    predictList.innerHTML = '<div class="empty-note">예측 가능한 대상이 없습니다. (같은 이용인의 기록이 2건 이상 있어야 평균 주기를 계산해요)</div>';
+  }else{
+    predictList.innerHTML = predictions.map(p => `
+      <div class="mini-row">
+        <div class="mini-left">
+          <span class="mini-name">${escapeHtml(p.name)}</span>
+          <span class="mini-sub">평균 주기 ${p.avgCycle}일</span>
+        </div>
+        <div class="mini-right ${p.daysAway<=2?'warn':''}">${formatKDate(p.predicted)} 예상${p.daysAway<=0?' (임박)':''}</div>
+      </div>`).join('');
+  }
+}
+
+function renderAlerts(){
+  const todayStr = todayISO();
+  const byName = {};
+  entries.forEach(e => { (byName[e.residentName] = byName[e.residentName]||[]).push(e.startDate); });
+  let soonCount = 0;
+  Object.keys(byName).forEach(name => {
+    const starts = byName[name].sort();
+    if(starts.length < 2) return;
+    const diffs = [];
+    for(let i=1;i<starts.length;i++) diffs.push(Math.round((toDateObj(starts[i])-toDateObj(starts[i-1]))/86400000));
+    const avgCycle = Math.round(diffs.reduce((a,b)=>a+b,0)/diffs.length);
+    const predicted = addDays(toDateObj(starts[starts.length-1]), avgCycle);
+    const daysAway = Math.round((predicted - toDateObj(todayStr))/86400000);
+    if(daysAway >= 0 && daysAway <= 1) soonCount++;
+  });
+  const strip = document.getElementById('alertStrip');
+  if(soonCount === 0){
+    strip.style.display = 'none'; strip.innerHTML = '';
+  }else{
+    strip.style.display = 'flex';
+    strip.innerHTML = `<div class="alert-card">📅 <b>${soonCount}명</b>의 생리 예정일이 오늘·내일로 예측됩니다. 위생용품을 미리 준비해주세요.</div>`;
+  }
+}
+
+function renderTable(){
+  const search = document.getElementById('searchInput').value.trim();
+  const todayStr = todayISO();
+
+  const rows = entries
+    .filter(e => !search || e.residentName.includes(search))
+    .sort((a,b) => b.startDate.localeCompare(a.startDate));
+
+  const tbody = document.getElementById('tableBody');
+  if(rows.length === 0){
+    tbody.innerHTML = `<tr><td colspan="8" class="empty-note">등록된 기록이 없습니다.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = rows.map(e => {
+    const ongoing = isOngoingOn(e, todayStr) && (!e.endDate || e.endDate >= todayStr);
+    const days = durationDays(e);
+    return `<tr>
+      <td>${escapeHtml(e.residentName)}</td>
+      <td>${e.startDate}</td>
+      <td>${e.endDate || '-'}</td>
+      <td>${days ? days+'일' : '-'}</td>
+      <td>${e.amount}</td>
+      <td>${e.symptoms && e.symptoms.length ? e.symptoms.join(', ') : '-'}</td>
+      <td class="${ongoing?'status-ongoing':'status-done'}">${ongoing?'진행중':'종료'}</td>
+      <td class="row-actions"><button class="btn btn-sm" onclick="openEditModal('${e.id}')">수정</button></td>
+    </tr>`;
+  }).join('');
+}
+
+function printMonth(){
+  const monthStart = new Date(viewYear, viewMonth, 1);
+  const monthEnd = new Date(viewYear, viewMonth+1, 0);
+  const monthStartStr = fmtISO(monthStart);
+  const monthEndStr = fmtISO(monthEnd);
+
+  const rows = entries
+    .filter(e => e.startDate <= monthEndStr && (!e.endDate || e.endDate >= monthStartStr))
+    .sort((a,b) => a.startDate.localeCompare(b.startDate) || a.residentName.localeCompare(b.residentName,'ko'));
+
+  let tableHtml;
+  if(rows.length === 0){
+    tableHtml = `<div class="print-empty">이 달에 해당하는 기록이 없습니다.</div>`;
+  }else{
+    tableHtml = `<table class="print-table">
+      <thead>
+        <tr><th>이용인</th><th>시작일</th><th>종료일</th><th>기간</th><th>양</th><th>증상</th><th>메모</th></tr>
+      </thead>
+      <tbody>
+        ${rows.map(e => {
+          const days = durationDays(e);
+          return `<tr>
+            <td>${escapeHtml(e.residentName)}</td>
+            <td>${e.startDate}</td>
+            <td>${e.endDate || '진행중'}</td>
+            <td>${days ? days+'일' : '-'}</td>
+            <td>${e.amount}</td>
+            <td>${e.symptoms && e.symptoms.length ? e.symptoms.join(', ') : '-'}</td>
+            <td>${escapeHtml(e.note || '')}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>`;
+  }
+
+  document.getElementById('printArea').innerHTML = `
+    <div class="print-title">생리일지 · ${viewYear}년 ${viewMonth+1}월</div>
+    <div class="print-sub">사하의집 · 물봉선 · 총 ${rows.length}건</div>
+    ${tableHtml}
+    <div class="print-footer">출력일: ${todayISO()}</div>
+  `;
+
+  window.print();
+}
+
+function refreshDatalists(){
+  const names = [...new Set(entries.map(e => e.residentName).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'ko'));
+  document.getElementById('nameList').innerHTML = names.map(n => `<option value="${escapeHtml(n)}">`).join('');
+}
+
+function escapeHtml(str){
+  if(str == null) return '';
+  return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+document.getElementById('entryModalBackdrop').addEventListener('click', e => {
+  if(e.target.id === 'entryModalBackdrop') closeEntryModal();
+});
+document.getElementById('dayModalBackdrop').addEventListener('click', e => {
+  if(e.target.id === 'dayModalBackdrop') closeDayModal();
+});
+
+loadEntries();
+
+// 초기 렌더링 타이밍 이슈 방지: 리소스(폰트 등) 로드 완료 후 한 번 더 렌더링
+window.addEventListener('load', () => {
+  requestAnimationFrame(() => renderAll());
+});
+</script>
+</body>
+</html>
