@@ -100,7 +100,13 @@ table.check-table td.day-cell .mark{
   display:inline-block;width:16px;height:16px;border-radius:4px;
 }
 table.check-table td.day-cell.checked .mark{background:var(--primary);}
+table.check-table td.day-cell.pending .mark{background:transparent;border:2px dashed var(--primary);}
 table.check-table td.day-cell:hover .mark{outline:2px solid var(--primary-soft);}
+.pending-bar{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  background:var(--primary-soft);color:var(--primary-dark);
+  border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:12.5px;font-weight:600;
+}
 table.check-table td.total-col{font-weight:700;color:var(--primary-dark);background:var(--surface-soft);min-width:44px;}
 table.check-table td.del-col{min-width:40px;}
 .empty-note{color:var(--ink-faint);font-size:13px;padding:10px 0;}
@@ -139,7 +145,7 @@ table.check-table td.del-col{min-width:40px;}
     <div class="title-block">
       <div class="eyebrow">사하의집 · 물봉선</div>
       <h1>생리일지</h1>
-      <p>이름과 날짜가 만나는 칸을 눌러 생리한 날을 체크하세요. 다시 누르면 취소돼요.</p>
+      <p>이름과 날짜가 만나는 칸을 눌러 시작일로 지정하고, 끝나는 날짜를 한 번 더 누르면 그 사이 날짜가 전부 체크돼요.</p>
     </div>
     <div class="header-actions">
       <button class="btn" onclick="printMonth()">🖨️ 이번달 인쇄</button>
@@ -216,6 +222,7 @@ let roster = [];        // [{id, name}]
 let checkDocs = {};     // key: name -> {id, residentName, yearMonth, days:[1,5,12]}
 let noteDoc = { note: '' };
 let noteTimer = null;
+let pendingStart = { name: null, day: null }; // 범위 선택용 시작일 대기 상태
 
 function yearMonthKey(){ return `${viewYear}-${String(viewMonth+1).padStart(2,'0')}`; }
 function todayISO(){
@@ -283,14 +290,11 @@ function removeResident(id, name){
     .catch(err => { console.error(err); showToast('삭제에 실패했습니다.'); });
 }
 
-function toggleDay(name, day){
+function saveDays(name, days){
   const ym = yearMonthKey();
   const existing = checkDocs[name];
-  let days = existing ? (existing.days || []).slice() : [];
-  const idx = days.indexOf(day);
-  if(idx > -1) days.splice(idx,1); else days.push(day);
-
   const id = existing ? existing.id : `${name}__${ym}`;
+  days = [...new Set(days)].sort((a,b) => a-b);
   checkDocs[name] = { id, residentName: name, yearMonth: ym, days };
   renderGrid();
 
@@ -300,6 +304,42 @@ function toggleDay(name, day){
   }
   db.collection('period_checks').doc(id).set({ residentName: name, yearMonth: ym, days })
     .catch(err => { console.error(err); showToast('저장에 실패했습니다.'); });
+}
+
+/* 칸 클릭: 처음 누르면 "시작일" 대기, 같은 줄에서 다시 누르면 그 사이 날짜가 전부 체크됨.
+   이미 체크된 칸을 대기 상태 없이 누르면 그 날짜만 체크 해제됩니다. */
+function onCellClick(name, day){
+  const days = (checkDocs[name] && checkDocs[name].days) || [];
+
+  if(pendingStart.name === name){
+    // 두번째 클릭: 시작일 ~ 이 날짜까지 모두 체크
+    const start = Math.min(pendingStart.day, day);
+    const end = Math.max(pendingStart.day, day);
+    const newDays = days.slice();
+    for(let d=start; d<=end; d++){ if(!newDays.includes(d)) newDays.push(d); }
+    pendingStart = { name: null, day: null };
+    saveDays(name, newDays);
+    return;
+  }
+
+  if(pendingStart.name && pendingStart.name !== name){
+    // 다른 이용인 줄을 눌렀다면 이전 대기는 취소하고 새로 시작
+    pendingStart = { name: null, day: null };
+  }
+
+  if(days.includes(day)){
+    // 대기 중이 아닐 때 이미 체크된 칸을 누르면 그 날짜만 해제
+    saveDays(name, days.filter(d => d !== day));
+    return;
+  }
+
+  // 첫 클릭: 시작일로 대기
+  pendingStart = { name, day };
+  renderGrid();
+}
+function cancelPending(){
+  pendingStart = { name: null, day: null };
+  renderGrid();
 }
 
 function saveNoteDebounced(){
@@ -350,6 +390,12 @@ function renderGrid(){
   const todayStr = todayISO();
   const todayDay = todayStr.startsWith(yearMonthKey()) ? new Date().getDate() : null;
 
+  let statusHtml = '';
+  if(pendingStart.name){
+    statusHtml = `<div class="pending-bar">📌 <b>${escapeHtml(pendingStart.name)}</b>님 ${pendingStart.day}일 선택됨 — 끝나는 날짜를 눌러주세요 (같은 날짜를 다시 누르면 그 날만 체크돼요)
+      <button class="btn btn-ghost btn-sm" onclick="cancelPending()">선택 취소</button></div>`;
+  }
+
   let dayHeaders = '';
   for(let d=1; d<=daysInMonth; d++){
     dayHeaders += `<th class="day-col">${d}</th>`;
@@ -364,7 +410,8 @@ function renderGrid(){
       const isWeekend = dow===0 || dow===6;
       const isToday = d === todayDay;
       const isChecked = checked.includes(d);
-      cells += `<td class="day-cell ${isWeekend?'weekend':''} ${isToday?'today-col':''} ${isChecked?'checked':''}" onclick="toggleDay('${escapeAttr(r.name)}', ${d})"><span class="mark"></span></td>`;
+      const isPending = pendingStart.name === r.name && pendingStart.day === d;
+      cells += `<td class="day-cell ${isWeekend?'weekend':''} ${isToday?'today-col':''} ${isChecked?'checked':''} ${isPending?'pending':''}" onclick="onCellClick('${escapeAttr(r.name)}', ${d})"><span class="mark"></span></td>`;
     }
     bodyRows += `<tr>
       <td class="name-col">${escapeHtml(r.name)}</td>
@@ -374,7 +421,7 @@ function renderGrid(){
     </tr>`;
   });
 
-  area.innerHTML = `<table class="check-table">
+  area.innerHTML = `${statusHtml}<table class="check-table">
     <thead><tr><th class="name-col">이름</th>${dayHeaders}<th>합계</th><th></th></tr></thead>
     <tbody>${bodyRows}</tbody>
   </table>`;
